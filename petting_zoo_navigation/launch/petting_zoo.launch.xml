@@ -1,0 +1,101 @@
+<?xml version="1.0"?>
+<!-- Starts the petting zoo nodes on the robot.
+     Pick the human detector with human_detector:=yolo (default) or human_detector:=hog -->
+
+<launch>
+  <arg name="use_sim_time" default="false"/>
+  <!-- Base velocity command topic -->
+  <arg name="cmd_vel_topic" default="/mirte_base_controller/cmd_vel"/>
+  <!-- Human detector backend: yolo (default) or hog -->
+  <arg name="human_detector" default="yolo"/>
+  <!-- Raw camera topic for the HOG detector (YOLO reads its topic from its own YAML) -->
+  <arg name="camera_topic" default="/gripper_camera/image_raw"/>
+  <!-- Scan angle (rad) that points to robot-front. Real robot: 1.5708 (lidar faces right) -->
+  <arg name="front_offset" default="1.5708"/>
+  <!-- Real robot lidar is mirrored (angles run clockwise) -->
+  <arg name="flip_scan" default="true"/>
+  <!-- Random-walk node: front (walking_around) or field (walking_around_field) -->
+  <arg name="walker" default="front"/>
+  <!-- Turn the arm against the base rotation: true (default) or false -->
+  <arg name="counter_rotate" default="true"/>
+  <!-- Which apple the robot likes: red (default) or green. The other one is disliked.
+       The nodes' red/green subscriptions are swapped by remapping, the detector is untouched -->
+  <arg name="liked_apple" default="red"/>
+  <!-- Drive the base: true (default) or false. false skips the random walker,
+       so only detection, the FSM, the arm and the gripper run (for testing detection) -->
+  <arg name="navigation" default="true"/>
+  <let name="disliked_apple" value="$(eval '\'green\' if \'$(var liked_apple)\' == \'red\' else \'red\'')"/>
+
+  <!-- Random walk with obstacle avoidance (enabled/disabled by the FSM).
+       walker:=front (default) only avoids what is ahead; walker:=field avoids obstacles all around -->
+  <group if="$(var navigation)">
+  <group if="$(eval '\'$(var walker)\' == \'front\'')">
+    <node pkg="petting_zoo_navigation" exec="walking_around" name="walking_around" output="screen">
+      <param name="use_sim_time" value="$(var use_sim_time)"/>
+      <param name="front_offset" value="$(var front_offset)"/>
+      <param name="flip_scan" value="$(var flip_scan)"/>
+      <!-- walking_around publishes on the absolute robot topic, so remap that name -->
+      <remap from="/mirte_base_controller/cmd_vel" to="$(var cmd_vel_topic)"/>
+    </node>
+  </group>
+  <group if="$(eval '\'$(var walker)\' == \'field\'')">
+    <node pkg="petting_zoo_navigation" exec="walking_around_field" name="walking_around_field" output="screen">
+      <param name="use_sim_time" value="$(var use_sim_time)"/>
+      <param name="front_offset" value="$(var front_offset)"/>
+      <param name="flip_scan" value="$(var flip_scan)"/>
+      <remap from="/mirte_base_controller/cmd_vel" to="$(var cmd_vel_topic)"/>
+    </node>
+  </group>
+  </group>
+
+  <!-- Points the arm at the detected human (enabled/disabled by the FSM) -->
+  <node pkg="petting_zoo_navigation" exec="arm_track_controller" name="arm_track_controller" output="screen">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+    <param name="counter_rotate" value="$(var counter_rotate)"/>
+    <!-- rad added to the shoulder pan to move the apple aside before dropping it (negative = other side) -->
+    <param name="aside_pan" value="0.8"/>
+    <remap from="cmd_vel" to="$(var cmd_vel_topic)"/>
+    <remap from="detections/apples/red"   to="detections/apples/$(var liked_apple)"/>
+    <remap from="detections/apples/green" to="detections/apples/$(var disliked_apple)"/>
+  </node>
+
+  <!-- Opens the gripper in the apple state, closes it on its own for the disliked apple, or with the button for the liked one (enabled/disabled by the FSM) -->
+  <node pkg="petting_zoo_navigation" exec="gripper_controller" name="gripper_controller" output="screen">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+    <param name="liked_memory" value="20.0"/>
+    <!-- After a button close: wait drop_delay s, move the arm aside, wait aside_time s, open to drop the apple -->
+    <param name="drop_delay" value="2.0"/>
+    <param name="aside_time" value="2.0"/>
+    <remap from="button" to="/io/intensity/emergency_button/digital"/>
+    <remap from="detections/apples/red"   to="detections/apples/$(var liked_apple)"/>
+    <remap from="detections/apples/green" to="detections/apples/$(var disliked_apple)"/>
+  </node>
+
+  <!-- YOLO human detector, publishes vision_msgs/BoundingBox2DArray on detections/humans -->
+  <group if="$(eval '\'$(var human_detector)\' == \'yolo\'')">
+    <include file="$(find-pkg-share human_detector_yolo)/launch/human_detector_yolo.launch.xml"/>
+  </group>
+
+  <!-- HOG human detector. It needs raw images, so decompress the camera stream first. -->
+  <group if="$(eval '\'$(var human_detector)\' == \'hog\'')">
+    <node pkg="image_transport" exec="republish" name="hog_image_republish" output="screen"
+          args="compressed raw">
+      <remap from="in/compressed" to="$(var camera_topic)/compressed"/>
+      <remap from="out" to="$(var camera_topic)"/>
+    </node>
+    <node pkg="human_detector_hog" exec="human_detector_hog" name="human_detector_hog" output="screen">
+      <param name="use_sim_time" value="$(var use_sim_time)"/>
+      <param name="image_topic" value="$(var camera_topic)"/>
+    </node>
+  </group>
+
+  <!-- Colour apple detector, publishes detections/apples/red and detections/apples/green -->
+  <include file="$(find-pkg-share mirte_apple_detector)/launch/apple_detector.launch.xml"/>
+
+  <!-- State machine: searching <-> tracking <-> apple -->
+  <node pkg="petting_zoo_fsm" exec="fsm_node" name="fsm_node" output="screen">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+    <remap from="detections/apples/red"   to="detections/apples/$(var liked_apple)"/>
+    <remap from="detections/apples/green" to="detections/apples/$(var disliked_apple)"/>
+  </node>
+</launch>

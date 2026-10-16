@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- Launch the human_detector_yolo node with parameters from the YAML config.
+
+     Override the config file at launch time with:
+       ros2 launch human_detector_yolo human_detector_yolo.launch.xml \
+           config_file:=/path/to/your.yaml
+-->
+<launch>
+  <arg name="config_file"
+       default="$(find-pkg-share human_detector_yolo)/config/human_detector_yolo.yaml"
+       description="Full path to the parameter YAML file."/>
+
+  <node pkg="human_detector_yolo" exec="human_detector_yolo" name="human_detector_yolo" output="screen">
+    <param from="$(var config_file)"/>
+  </node>
+</launch>

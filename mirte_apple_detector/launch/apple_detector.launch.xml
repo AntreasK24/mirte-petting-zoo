@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="config_file"
+       default="$(find-pkg-share mirte_apple_detector)/config/apple_detector.yaml"
+       description="Full path to the parameter YAML file."/>
+
+  <node pkg="mirte_apple_detector" exec="apple_detector" name="apple_detector" output="screen">
+    <param from="$(var config_file)"/>
+  </node>
+</launch>

@@ -1,0 +1,37 @@
+# Configuration for mirte_apple_detector (colour + shape, no neural network).
+# Detects exactly two classes: red and green apples.
+#
+# The top-level key MUST match the node name ("apple_detector").
+apple_detector:
+  ros__parameters:
+
+    # --- input -----------------------------------------------------------
+    image_topic: /gripper_camera/image_raw/compressed
+    queue_size: 1
+    max_rate: 5.0                   # cap detection Hz (0 = every frame)
+
+    publish_debug_image: true      # also publishes apple_detector/mask/<colour> (mono8)
+
+    min_area: 700                  # px^2; ignore blobs smaller than this
+    max_area: 100000               # px^2; 0 = no upper limit (~1/3 of a 640x480 frame)
+    min_circularity: 0.35          # loose: real apples run ~0.35-0.8
+    min_solidity: 0.78             # main shape cue; rejects spindly blobs
+    min_aspect: 0.55               # box short/long side; rejects sleeves, bottles
+    min_fill: 0.45                 # area / enclosing circle; circle 1.0, square 0.64
+    overlap_ratio: 0.3             # red & green boxes overlapping this much of the smaller one: bigger wins (0 = off)
+    blur_ksize: 5                  # Gaussian blur before HSV (odd; <3 = off)
+    morph_ksize: 11                # bigger kernel consolidates highlight gaps
+
+    red:
+      hue_ranges: [0, 10, 170, 179]    # pure red, wraps around hue 0
+      sat_min: 120                     # high: only vivid reds
+      val_min: 60
+      a_min: 145                       # LAB a* (128 = neutral); red apples ~160-190, skin ~135-150
+      a_max: 255
+
+    green:
+      hue_ranges: [28, 95]
+      sat_min: 40
+      val_min: 30
+      a_min: 0
+      a_max: 120                       # LAB a* (128 = neutral); green apples ~90-115, grey/teal ~125-130
